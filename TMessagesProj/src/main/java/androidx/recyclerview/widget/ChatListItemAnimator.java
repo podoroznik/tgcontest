@@ -5,11 +5,19 @@ import android.animation.AnimatorListenerAdapter;
 import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
+import android.app.Activity;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.util.DisplayMetrics;
+import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.ViewPropertyAnimator;
 import android.view.animation.Interpolator;
 import android.view.animation.OvershootInterpolator;
 
+import android.widget.FrameLayout;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.view.ViewCompat;
@@ -19,13 +27,16 @@ import org.telegram.messenger.FileLog;
 import org.telegram.messenger.ImageReceiver;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.SharedConfig;
+import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.BotHelpCell;
-import org.telegram.ui.Cells.ChatActionCell;
 import org.telegram.ui.Cells.ChatMessageCell;
 import org.telegram.ui.ChatActivity;
 import org.telegram.ui.Components.ChatGreetingsView;
+import org.telegram.ui.Components.ClippingImageView;
+import org.telegram.ui.Components.CroppingImageView;
 import org.telegram.ui.Components.CubicBezierInterpolator;
+import org.telegram.ui.Components.ParticleSmasher;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.TextMessageEnterTransition;
 import org.telegram.ui.VoiceMessageEnterTransition;
@@ -46,7 +57,7 @@ public class ChatListItemAnimator extends DefaultItemAnimator {
     private HashMap<Integer, MessageObject.GroupedMessages> willRemovedGroup = new HashMap<>();
     private ArrayList<MessageObject.GroupedMessages> willChangedGroups = new ArrayList<>();
 
-    HashMap<RecyclerView.ViewHolder,Animator> animators = new HashMap<>();
+    HashMap<RecyclerView.ViewHolder, Animator> animators = new HashMap<>();
 
     ArrayList<Runnable> runOnAnimationsEnd = new ArrayList<>();
     HashMap<Long, Long> groupIdToEnterDelay = new HashMap<>();
@@ -126,7 +137,7 @@ public class ChatListItemAnimator extends DefaultItemAnimator {
         }
         // First, remove stuff
         for (RecyclerView.ViewHolder holder : mPendingRemovals) {
-            animateRemoveImpl(holder);
+            animateSmashingRemoveImpl(holder);
         }
         mPendingRemovals.clear();
         // Next, move stuff
@@ -569,7 +580,7 @@ public class ChatListItemAnimator extends DefaultItemAnimator {
 
                     groupTransitionParams.isNewGroup = false;
 
-                    if (animateToTop == 0 &&  animateToBottom == 0 && animateToLeft == 0 && animateToRight == 0) {
+                    if (animateToTop == 0 && animateToBottom == 0 && animateToLeft == 0 && animateToRight == 0) {
                         moveInfo.animateChangeGroupBackground = false;
                         groupTransitionParams.backgroundChangeBounds = false;
                     } else {
@@ -678,7 +689,7 @@ public class ChatListItemAnimator extends DefaultItemAnimator {
         MoveInfoExtended moveInfoExtended = (MoveInfoExtended) moveInfo;
 
         if (activity != null && holder.itemView instanceof BotHelpCell) {
-            BotHelpCell botCell = (BotHelpCell) holder.itemView ;
+            BotHelpCell botCell = (BotHelpCell) holder.itemView;
             float animateFrom = botCell.getTranslationY();
 
             ValueAnimator valueAnimator = ValueAnimator.ofFloat(0, 1f);
@@ -707,7 +718,7 @@ public class ChatListItemAnimator extends DefaultItemAnimator {
 
 
                 float captionEnterFrom = chatMessageCell.getCurrentMessagesGroup() == null ? params.captionEnterProgress : chatMessageCell.getCurrentMessagesGroup().transitionParams.captionEnterProgress;
-                float captionEnterTo = chatMessageCell.getCurrentMessagesGroup() == null ? (chatMessageCell.hasCaptionLayout()  ? 1 : 0) : (chatMessageCell.getCurrentMessagesGroup().hasCaption ? 1 : 0);
+                float captionEnterTo = chatMessageCell.getCurrentMessagesGroup() == null ? (chatMessageCell.hasCaptionLayout() ? 1 : 0) : (chatMessageCell.getCurrentMessagesGroup().hasCaption ? 1 : 0);
                 boolean animateCaption = captionEnterFrom != captionEnterTo;
 
                 int[] fromRoundRadius = null;
@@ -964,30 +975,30 @@ public class ChatListItemAnimator extends DefaultItemAnimator {
             mChangeAnimations.add(changeInfo.newHolder);
             newViewAnimation.translationX(0).translationY(0).setDuration(getChangeDuration())
                     .alpha(1).setListener(new AnimatorListenerAdapter() {
-                @Override
-                public void onAnimationStart(Animator animator) {
-                    dispatchChangeStarting(changeInfo.newHolder, false);
-                }
+                        @Override
+                        public void onAnimationStart(Animator animator) {
+                            dispatchChangeStarting(changeInfo.newHolder, false);
+                        }
 
-                @Override
-                public void onAnimationEnd(Animator animator) {
-                    newViewAnimation.setListener(null);
-                    newView.setAlpha(1);
-                    newView.setScaleX(1f);
-                    newView.setScaleX(1f);
-                    if (newView instanceof ChatMessageCell) {
-                        ((ChatMessageCell) newView).setAnimationOffsetX(0);
-                    } else {
-                        newView.setTranslationX(0);
-                    }
-                    newView.setTranslationY(0);
+                        @Override
+                        public void onAnimationEnd(Animator animator) {
+                            newViewAnimation.setListener(null);
+                            newView.setAlpha(1);
+                            newView.setScaleX(1f);
+                            newView.setScaleX(1f);
+                            if (newView instanceof ChatMessageCell) {
+                                ((ChatMessageCell) newView).setAnimationOffsetX(0);
+                            } else {
+                                newView.setTranslationX(0);
+                            }
+                            newView.setTranslationY(0);
 
-                    if (mChangeAnimations.remove(changeInfo.newHolder)) {
-                        dispatchChangeFinished(changeInfo.newHolder, false);
-                        dispatchFinishedWhenDone();
-                    }
-                }
-            }).start();
+                            if (mChangeAnimations.remove(changeInfo.newHolder)) {
+                                dispatchChangeFinished(changeInfo.newHolder, false);
+                                dispatchFinishedWhenDone();
+                            }
+                        }
+                    }).start();
         }
     }
 
@@ -1197,7 +1208,7 @@ public class ChatListItemAnimator extends DefaultItemAnimator {
         if (groupedMessages.messages.size() == 0) {
             groupedMessages.transitionParams.drawBackgroundForDeletedItems = true;
         } else {
-            if (groupedMessages.transitionParams.top == 0 && groupedMessages.transitionParams.bottom == 0 && groupedMessages.transitionParams.left == 0 && groupedMessages.transitionParams.right == 0)  {
+            if (groupedMessages.transitionParams.top == 0 && groupedMessages.transitionParams.bottom == 0 && groupedMessages.transitionParams.left == 0 && groupedMessages.transitionParams.right == 0) {
                 int n = recyclerListView.getChildCount();
                 for (int i = 0; i < n; i++) {
                     View child = recyclerListView.getChildAt(i);
@@ -1205,8 +1216,8 @@ public class ChatListItemAnimator extends DefaultItemAnimator {
                         ChatMessageCell cell = (ChatMessageCell) child;
                         MessageObject messageObject = cell.getMessageObject();
                         if (cell.getTransitionParams().wasDraw && groupedMessages.messages.contains(messageObject)) {
-                            groupedMessages.transitionParams.top = cell.getTop() +  cell.getBackgroundDrawableTop();
-                            groupedMessages.transitionParams.bottom = cell.getTop() +  cell.getBackgroundDrawableBottom();
+                            groupedMessages.transitionParams.top = cell.getTop() + cell.getBackgroundDrawableTop();
+                            groupedMessages.transitionParams.bottom = cell.getTop() + cell.getBackgroundDrawableBottom();
                             groupedMessages.transitionParams.left = cell.getLeft() + cell.getBackgroundDrawableLeft();
                             groupedMessages.transitionParams.right = cell.getLeft() + cell.getBackgroundDrawableRight();
                             groupedMessages.transitionParams.drawCaptionLayout = cell.hasCaptionLayout();
@@ -1251,7 +1262,7 @@ public class ChatListItemAnimator extends DefaultItemAnimator {
         boolean useScale = true;
         long currentDelay = (long) ((1f - Math.max(0, Math.min(1f, view.getBottom() / (float) recyclerListView.getMeasuredHeight()))) * 100);
 
-        if (view instanceof ChatMessageCell){
+        if (view instanceof ChatMessageCell) {
             if (holder == greetingsSticker) {
                 useScale = false;
                 if (chatGreetingsView != null) {
@@ -1259,7 +1270,7 @@ public class ChatListItemAnimator extends DefaultItemAnimator {
                 }
                 recyclerListView.setClipChildren(false);
                 ChatMessageCell messageCell = (ChatMessageCell) view;
-                View parentForGreetingsView = (View)chatGreetingsView.getParent();
+                View parentForGreetingsView = (View) chatGreetingsView.getParent();
                 float fromX = chatGreetingsView.stickerToSendView.getX() + chatGreetingsView.getX() + parentForGreetingsView.getX();
                 float fromY = chatGreetingsView.stickerToSendView.getY() + chatGreetingsView.getY() + parentForGreetingsView.getY();
                 float toX = messageCell.getPhotoImage().getImageX() + recyclerListView.getX() + messageCell.getX();
@@ -1276,9 +1287,9 @@ public class ChatListItemAnimator extends DefaultItemAnimator {
 
                 messageCell.getTransitionParams().imageChangeBoundsTransition = true;
                 messageCell.getTransitionParams().animateDrawingTimeAlpha = true;
-                messageCell.getPhotoImage().setImageCoords(toX + deltaX, toX + deltaY, fromW,fromH);
+                messageCell.getPhotoImage().setImageCoords(toX + deltaX, toX + deltaY, fromW, fromH);
 
-                ValueAnimator valueAnimator = ValueAnimator.ofFloat(0,1f);
+                ValueAnimator valueAnimator = ValueAnimator.ofFloat(0, 1f);
                 float finalToX = toX;
                 float finalToY = toY;
                 valueAnimator.addUpdateListener(animation -> {
@@ -1405,6 +1416,46 @@ public class ChatListItemAnimator extends DefaultItemAnimator {
         recyclerListView.stopScroll();
     }
 
+    protected void animateSmashingRemoveImpl(final RecyclerView.ViewHolder holder) {
+        if (BuildVars.LOGS_ENABLED) {
+            FileLog.d("animate remove impl");
+        }
+        final View view = holder.itemView;
+        DisplayMetrics displayMetrics = new DisplayMetrics();
+        activity.getParentActivity().getWindowManager().getDefaultDisplay().getMetrics(displayMetrics);
+        int screenHeight = displayMetrics.heightPixels;
+        if (screenHeight * 0.7 > view.getHeight()) {
+            ParticleSmasher smasher = new ParticleSmasher(view.getContext());
+
+            int[] outLocation = new int[2];
+            view.getLocationInWindow(outLocation);
+
+            ViewGroup parent = activity.contentView;
+            dispatchRemoveStarting(holder);
+            view.getRootView();
+            Bitmap viewBitmap = smasher.createBitmapFromView(view);
+
+            CroppingImageView newView = new CroppingImageView(view.getContext());
+            newView.setImageBitmap(viewBitmap);
+
+            parent.addView(newView);
+            newView.requestLayout();
+            newView.invalidate();
+            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            params.topMargin = outLocation[1] - activity.getActionBar().getHeight();
+            newView.setLayoutParams(params);
+            newView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> smasher.with(newView)
+                    .start());
+            dispatchRemoveFinished(holder);
+            dispatchFinishedWhenDone();
+
+            recyclerListView.stopScroll();
+
+        } else {
+            animateRemoveImpl(holder);
+        }
+    }
+
     public void setShouldAnimateEnterFromBottom(boolean shouldAnimateEnterFromBottom) {
         this.shouldAnimateEnterFromBottom = shouldAnimateEnterFromBottom;
     }
@@ -1503,4 +1554,3 @@ public class ChatListItemAnimator extends DefaultItemAnimator {
         int captionY;
     }
 }
-
